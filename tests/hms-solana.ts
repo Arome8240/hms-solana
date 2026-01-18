@@ -159,6 +159,7 @@ describe("hms-solana", () => {
           recordOwner: userKeypair.publicKey,
           actor: userKeypair.publicKey,
         })
+        .remainingAccounts([])
         .signers([userKeypair])
         .rpc();
 
