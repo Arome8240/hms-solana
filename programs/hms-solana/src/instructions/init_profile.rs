@@ -1,7 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::{
     constants::*,
-    errors::HealthManagerError,
     events::HealthProfileCreated,
     state::UserHealthProfile,
 };

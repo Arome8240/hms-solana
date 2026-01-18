@@ -1,5 +1,3 @@
-use anchor_lang::prelude::*;
-
 // PDA Seeds
 pub const USER_PROFILE_SEED: &[u8] = b"user_profile";
 pub const HEALTH_RECORD_SEED: &[u8] = b"health_record";
