@@ -180,8 +180,8 @@ pub fn access_with_research_grant(
     proposal_id: u64,
     record_id: u64,
 ) -> Result<()> {
-    let proposal = &ctx.accounts.proposal;
-    let record = &ctx.accounts.record;
+    let _proposal = &ctx.accounts.proposal;
+    let _record = &ctx.accounts.record;
     let researcher = &ctx.accounts.researcher;
     let record_owner = &ctx.accounts.record_owner;
 

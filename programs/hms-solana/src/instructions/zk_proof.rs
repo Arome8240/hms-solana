@@ -146,7 +146,7 @@ pub fn access_with_zk_proof(
     record_id: u64,
     _proof_hash: [u8; 32],
 ) -> Result<()> {
-    let record = &ctx.accounts.record;
+    let _record = &ctx.accounts.record;
     let accessor = &ctx.accounts.accessor;
     let record_owner = &ctx.accounts.record_owner;
 

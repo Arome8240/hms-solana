@@ -219,7 +219,7 @@ pub fn access_with_emergency(
     _emergency_contact: Pubkey,
 ) -> Result<()> {
     let emergency_access = &mut ctx.accounts.emergency_access;
-    let record = &ctx.accounts.record;
+    let _record = &ctx.accounts.record;
     let accessor = &ctx.accounts.accessor;
     let record_owner = &ctx.accounts.record_owner;
 
