@@ -251,20 +251,22 @@ pub mod hms_solana {
     /// Complete a sync operation successfully
     pub fn complete_sync_operation(
         ctx: Context<CompleteSyncOperation>,
-        operation_hash: [u8; 8],
+        source_device: String,
+        target_device: String,
         records_synced: u64,
         new_state_hash: [u8; 32],
     ) -> Result<()> {
-        instructions::complete_sync_operation(ctx, operation_hash, records_synced, new_state_hash)
+        instructions::complete_sync_operation(ctx, source_device, target_device, records_synced, new_state_hash)
     }
 
     /// Mark a sync operation as failed
     pub fn fail_sync_operation(
         ctx: Context<FailSyncOperation>,
-        operation_hash: [u8; 8],
+        source_device: String,
+        target_device: String,
         error_message: String,
     ) -> Result<()> {
-        instructions::fail_sync_operation(ctx, operation_hash, error_message)
+        instructions::fail_sync_operation(ctx, source_device, target_device, error_message)
     }
 
     /// Update sync primary device status

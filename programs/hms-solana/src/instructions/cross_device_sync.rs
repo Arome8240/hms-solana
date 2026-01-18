@@ -99,7 +99,7 @@ pub struct StartSyncOperation<'info> {
         init,
         payer = owner,
         space = SyncOperation::LEN,
-        seeds = [SYNC_STATE_SEED, b"operation", owner.key().as_ref(), &anchor_lang::solana_program::hash::hash(&[source_device.as_bytes(), target_device.as_bytes()].concat()).to_bytes()[..8]],
+        seeds = [SYNC_STATE_SEED, b"operation", owner.key().as_ref(), source_device.as_bytes(), target_device.as_bytes()],
         bump
     )]
     pub sync_operation: Account<'info, SyncOperation>,
@@ -148,11 +148,11 @@ pub fn start_sync_operation(
 }
 
 #[derive(Accounts)]
-#[instruction(operation_hash: [u8; 8], records_synced: u64, new_state_hash: [u8; 32])]
+#[instruction(source_device: String, target_device: String, records_synced: u64, new_state_hash: [u8; 32])]
 pub struct CompleteSyncOperation<'info> {
     #[account(
         mut,
-        seeds = [SYNC_STATE_SEED, b"operation", owner.key().as_ref(), operation_hash.as_ref()],
+        seeds = [SYNC_STATE_SEED, b"operation", owner.key().as_ref(), source_device.as_bytes(), target_device.as_bytes()],
         bump = sync_operation.bump,
         constraint = sync_operation.owner == owner.key() @ HealthManagerError::UnauthorizedAccess
     )]
@@ -180,7 +180,8 @@ pub struct CompleteSyncOperation<'info> {
 
 pub fn complete_sync_operation(
     ctx: Context<CompleteSyncOperation>,
-    _operation_hash: [u8; 8],
+    _source_device: String,
+    _target_device: String,
     records_synced: u64,
     new_state_hash: [u8; 32],
 ) -> Result<()> {
@@ -211,11 +212,11 @@ pub fn complete_sync_operation(
 }
 
 #[derive(Accounts)]
-#[instruction(operation_hash: [u8; 8], error_message: String)]
+#[instruction(source_device: String, target_device: String, error_message: String)]
 pub struct FailSyncOperation<'info> {
     #[account(
         mut,
-        seeds = [SYNC_STATE_SEED, b"operation", owner.key().as_ref(), operation_hash.as_ref()],
+        seeds = [SYNC_STATE_SEED, b"operation", owner.key().as_ref(), source_device.as_bytes(), target_device.as_bytes()],
         bump = sync_operation.bump,
         constraint = sync_operation.owner == owner.key() @ HealthManagerError::UnauthorizedAccess
     )]
@@ -227,7 +228,8 @@ pub struct FailSyncOperation<'info> {
 
 pub fn fail_sync_operation(
     ctx: Context<FailSyncOperation>,
-    _operation_hash: [u8; 8],
+    _source_device: String,
+    _target_device: String,
     error_message: String,
 ) -> Result<()> {
     let sync_operation = &mut ctx.accounts.sync_operation;
