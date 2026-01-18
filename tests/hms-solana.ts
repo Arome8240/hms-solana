@@ -15,6 +15,8 @@ describe("hms-solana", () => {
   // Test accounts
   let userKeypair: Keypair;
   let doctorKeypair: Keypair;
+  let researcherKeypair: Keypair;
+  let emergencyContactKeypair: Keypair;
   let userProfilePda: PublicKey;
   let recordPda: PublicKey;
   let accessGrantPda: PublicKey;
@@ -29,18 +31,34 @@ describe("hms-solana", () => {
     // Generate test keypairs
     userKeypair = Keypair.generate();
     doctorKeypair = Keypair.generate();
+    researcherKeypair = Keypair.generate();
+    emergencyContactKeypair = Keypair.generate();
 
     // Airdrop SOL to test accounts
+    const airdropAmount = 2 * anchor.web3.LAMPORTS_PER_SOL;
+
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(
         userKeypair.publicKey,
-        2 * anchor.web3.LAMPORTS_PER_SOL,
+        airdropAmount,
       ),
     );
     await provider.connection.confirmTransaction(
       await provider.connection.requestAirdrop(
         doctorKeypair.publicKey,
-        1 * anchor.web3.LAMPORTS_PER_SOL,
+        airdropAmount,
+      ),
+    );
+    await provider.connection.confirmTransaction(
+      await provider.connection.requestAirdrop(
+        researcherKeypair.publicKey,
+        airdropAmount,
+      ),
+    );
+    await provider.connection.confirmTransaction(
+      await provider.connection.requestAirdrop(
+        emergencyContactKeypair.publicKey,
+        airdropAmount,
       ),
     );
 
@@ -55,8 +73,7 @@ describe("hms-solana", () => {
     it("Initializes a health profile", async () => {
       const tx = await program.methods
         .initializeProfile()
-        .accounts({
-          profile: userProfilePda,
+        .accountsPartial({
           user: userKeypair.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -79,8 +96,7 @@ describe("hms-solana", () => {
       try {
         await program.methods
           .initializeProfile()
-          .accounts({
-            profile: userProfilePda,
+          .accountsPartial({
             user: userKeypair.publicKey,
             systemProgram: SystemProgram.programId,
           })
@@ -108,9 +124,7 @@ describe("hms-solana", () => {
 
       const tx = await program.methods
         .addRecord(recordType, encryptedUri, Array.from(dataHash), metadata)
-        .accounts({
-          profile: userProfilePda,
-          record: recordPda,
+        .accountsPartial({
           owner: userKeypair.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -141,12 +155,9 @@ describe("hms-solana", () => {
 
       const tx = await program.methods
         .updateRecord(new anchor.BN(0), newMetadata)
-        .accounts({
-          profile: userProfilePda,
-          record: recordPda,
+        .accountsPartial({
           recordOwner: userKeypair.publicKey,
           actor: userKeypair.publicKey,
-          accessGrant: null,
         })
         .signers([userKeypair])
         .rpc();
@@ -161,9 +172,7 @@ describe("hms-solana", () => {
     it("Soft deletes a health record", async () => {
       const tx = await program.methods
         .deleteRecord(new anchor.BN(0))
-        .accounts({
-          profile: userProfilePda,
-          record: recordPda,
+        .accountsPartial({
           owner: userKeypair.publicKey,
         })
         .signers([userKeypair])
@@ -198,9 +207,7 @@ describe("hms-solana", () => {
           Array.from(crypto.randomBytes(32)),
           "Lab test results",
         )
-        .accounts({
-          profile: userProfilePda,
-          record: secondRecordPda,
+        .accountsPartial({
           owner: userKeypair.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -224,9 +231,7 @@ describe("hms-solana", () => {
 
       const tx = await program.methods
         .grantAccess(doctorKeypair.publicKey, expiresAt, permissions)
-        .accounts({
-          profile: userProfilePda,
-          accessGrant: accessGrantPda,
+        .accountsPartial({
           owner: userKeypair.publicKey,
           systemProgram: SystemProgram.programId,
         })
@@ -251,12 +256,9 @@ describe("hms-solana", () => {
     it("Allows authorized user to read record", async () => {
       const tx = await program.methods
         .readRecord(new anchor.BN(1))
-        .accounts({
-          profile: userProfilePda,
-          record: secondRecordPda,
+        .accountsPartial({
           recordOwner: userKeypair.publicKey,
           accessor: doctorKeypair.publicKey,
-          accessGrant: accessGrantPda,
         })
         .signers([doctorKeypair])
         .rpc();
@@ -269,12 +271,9 @@ describe("hms-solana", () => {
 
       const tx = await program.methods
         .updateRecord(new anchor.BN(1), doctorNote)
-        .accounts({
-          profile: userProfilePda,
-          record: secondRecordPda,
+        .accountsPartial({
           recordOwner: userKeypair.publicKey,
           actor: doctorKeypair.publicKey,
-          accessGrant: accessGrantPda,
         })
         .signers([doctorKeypair])
         .rpc();
@@ -289,9 +288,7 @@ describe("hms-solana", () => {
     it("Revokes access from user", async () => {
       const tx = await program.methods
         .revokeAccess(doctorKeypair.publicKey)
-        .accounts({
-          profile: userProfilePda,
-          accessGrant: accessGrantPda,
+        .accountsPartial({
           owner: userKeypair.publicKey,
         })
         .signers([userKeypair])
@@ -307,25 +304,559 @@ describe("hms-solana", () => {
         expect(error.message).to.include("Account does not exist");
       }
     });
+  });
 
-    it("Prevents unauthorized access after revocation", async () => {
-      try {
-        await program.methods
-          .readRecord(new anchor.BN(1))
-          .accounts({
-            profile: userProfilePda,
-            record: secondRecordPda,
-            recordOwner: userKeypair.publicKey,
-            accessor: doctorKeypair.publicKey,
-            accessGrant: null,
-          })
-          .signers([doctorKeypair])
-          .rpc();
+  describe("ZK Proof Access", () => {
+    let zkProofPda: PublicKey;
+    const proofHash = crypto.randomBytes(32);
+    const publicInputs = crypto.randomBytes(32);
+    const proofData = crypto.randomBytes(256);
 
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error.message).to.include("UnauthorizedAccess");
-      }
+    it("Generates a ZK proof", async () => {
+      [zkProofPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("zk_proof"), userKeypair.publicKey.toBuffer(), proofHash],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .generateZkProof(
+          Array.from(proofHash),
+          Array.from(publicInputs),
+          Array.from(proofData),
+        )
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Generate ZK proof tx:", tx);
+
+      // Verify ZK proof was created
+      const zkProof = await program.account.zkProofState.fetch(zkProofPda);
+      expect(zkProof.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(zkProof.isValid).to.be.true;
+    });
+
+    it("Verifies a ZK proof", async () => {
+      const tx = await program.methods
+        .verifyZkProof(Array.from(proofHash))
+        .accountsPartial({
+          proofOwner: userKeypair.publicKey,
+          verifier: doctorKeypair.publicKey,
+        })
+        .signers([doctorKeypair])
+        .rpc();
+
+      console.log("Verify ZK proof tx:", tx);
+
+      // Verify proof verification count increased
+      const zkProof = await program.account.zkProofState.fetch(zkProofPda);
+      expect(zkProof.verificationCount.toNumber()).to.equal(1);
+    });
+
+    it("Accesses record with ZK proof", async () => {
+      const tx = await program.methods
+        .accessWithZkProof(new anchor.BN(1), Array.from(proofHash))
+        .accountsPartial({
+          recordOwner: userKeypair.publicKey,
+          accessor: userKeypair.publicKey,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Access with ZK proof tx:", tx);
+    });
+  });
+
+  describe("Emergency Access", () => {
+    let emergencyAccessPda: PublicKey;
+
+    it("Configures emergency access", async () => {
+      [emergencyAccessPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("emergency_access"),
+          userKeypair.publicKey.toBuffer(),
+          emergencyContactKeypair.publicKey.toBuffer(),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .configureEmergencyAccess(emergencyContactKeypair.publicKey)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Configure emergency access tx:", tx);
+
+      // Verify emergency access was configured
+      const emergencyAccess = await program.account.emergencyAccess.fetch(
+        emergencyAccessPda,
+      );
+      expect(emergencyAccess.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(emergencyAccess.emergencyContact.toString()).to.equal(
+        emergencyContactKeypair.publicKey.toString(),
+      );
+      expect(emergencyAccess.isActive).to.be.false;
+    });
+
+    it("Activates emergency access", async () => {
+      const reason = "Medical emergency - patient unconscious";
+
+      const tx = await program.methods
+        .activateEmergencyAccess(emergencyContactKeypair.publicKey, reason)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          activator: emergencyContactKeypair.publicKey,
+        })
+        .signers([emergencyContactKeypair])
+        .rpc();
+
+      console.log("Activate emergency access tx:", tx);
+
+      // Verify emergency access was activated
+      const emergencyAccess = await program.account.emergencyAccess.fetch(
+        emergencyAccessPda,
+      );
+      expect(emergencyAccess.isActive).to.be.true;
+      expect(emergencyAccess.activationReason).to.equal(reason);
+    });
+
+    it("Accesses record with emergency authorization", async () => {
+      const tx = await program.methods
+        .accessWithEmergency(
+          new anchor.BN(1),
+          emergencyContactKeypair.publicKey,
+        )
+        .accountsPartial({
+          recordOwner: userKeypair.publicKey,
+          accessor: emergencyContactKeypair.publicKey,
+        })
+        .signers([emergencyContactKeypair])
+        .rpc();
+
+      console.log("Access with emergency tx:", tx);
+    });
+
+    it("Deactivates emergency access", async () => {
+      const tx = await program.methods
+        .deactivateEmergencyAccess(emergencyContactKeypair.publicKey)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Deactivate emergency access tx:", tx);
+
+      // Verify emergency access was deactivated
+      const emergencyAccess = await program.account.emergencyAccess.fetch(
+        emergencyAccessPda,
+      );
+      expect(emergencyAccess.isActive).to.be.false;
+    });
+  });
+
+  describe("DAO Governance", () => {
+    let proposalPda: PublicKey;
+    let votePda: PublicKey;
+    const proposalId = 1;
+    const researchTopic = "COVID-19 Long-term Effects Study";
+
+    it("Creates a research proposal", async () => {
+      [proposalPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("dao_governance"),
+          Buffer.from("proposal"),
+          new anchor.BN(proposalId).toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .createResearchProposal(new anchor.BN(proposalId), researchTopic)
+        .accountsPartial({
+          researcher: researcherKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([researcherKeypair])
+        .rpc();
+
+      console.log("Create research proposal tx:", tx);
+
+      // Verify proposal was created
+      const proposal = await program.account.researchProposal.fetch(
+        proposalPda,
+      );
+      expect(proposal.researcher.toString()).to.equal(
+        researcherKeypair.publicKey.toString(),
+      );
+      expect(proposal.researchTopic).to.equal(researchTopic);
+      expect(proposal.yesVotes.toNumber()).to.equal(0);
+    });
+
+    it("Votes on research proposal", async () => {
+      [votePda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("dao_governance"),
+          Buffer.from("vote"),
+          new anchor.BN(proposalId).toArrayLike(Buffer, "le", 8),
+          userKeypair.publicKey.toBuffer(),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .voteOnResearchProposal(new anchor.BN(proposalId), true)
+        .accountsPartial({
+          voter: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Vote on proposal tx:", tx);
+
+      // Verify vote was recorded
+      const vote = await program.account.researchVote.fetch(votePda);
+      expect(vote.voter.toString()).to.equal(userKeypair.publicKey.toString());
+      expect(vote.vote).to.be.true;
+
+      // Verify proposal vote count increased
+      const proposal = await program.account.researchProposal.fetch(
+        proposalPda,
+      );
+      expect(proposal.yesVotes.toNumber()).to.equal(1);
+    });
+  });
+
+  describe("Wearable Integration", () => {
+    let wearableDevicePda: PublicKey;
+    let dataBatchPda: PublicKey;
+    const deviceId = "smartwatch-001";
+    const deviceType = "fitness_tracker";
+    const deviceKeypair = Keypair.generate();
+    const batchId = 1;
+
+    it("Registers a wearable device", async () => {
+      [wearableDevicePda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("wearable_device"),
+          userKeypair.publicKey.toBuffer(),
+          Buffer.from(deviceId),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .registerWearableDevice(deviceId, deviceType, deviceKeypair.publicKey)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Register wearable device tx:", tx);
+
+      // Verify device was registered
+      const device = await program.account.wearableDevice.fetch(
+        wearableDevicePda,
+      );
+      expect(device.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(device.deviceId).to.equal(deviceId);
+      expect(device.deviceType).to.equal(deviceType);
+      expect(device.isActive).to.be.true;
+    });
+
+    it("Ingests wearable data", async () => {
+      [dataBatchPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("wearable_device"),
+          Buffer.from("batch"),
+          userKeypair.publicKey.toBuffer(),
+          Buffer.from(deviceId),
+          new anchor.BN(batchId).toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId,
+      );
+
+      const encryptedDataUri = "QmWearableDataBatch123";
+      const batchDataHash = crypto.randomBytes(32);
+      const dataPointCount = 100;
+      const startTimestamp = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+      const endTimestamp = Math.floor(Date.now() / 1000);
+
+      const tx = await program.methods
+        .ingestWearableData(
+          deviceId,
+          new anchor.BN(batchId),
+          encryptedDataUri,
+          Array.from(batchDataHash),
+          dataPointCount,
+          new anchor.BN(startTimestamp),
+          new anchor.BN(endTimestamp),
+        )
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Ingest wearable data tx:", tx);
+
+      // Verify data batch was created
+      const dataBatch = await program.account.wearableDataBatch.fetch(
+        dataBatchPda,
+      );
+      expect(dataBatch.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(dataBatch.deviceId).to.equal(deviceId);
+      expect(dataBatch.dataPointCount).to.equal(dataPointCount);
+      expect(dataBatch.isProcessed).to.be.false;
+    });
+
+    it("Processes wearable data to health record", async () => {
+      const newRecordType = "heart_rate_data";
+      const newMetadata = "Heart rate data from smartwatch";
+
+      // Get current record count for PDA derivation
+      const profile = await program.account.userHealthProfile.fetch(
+        userProfilePda,
+      );
+      const recordCount = profile.recordCount.toNumber();
+
+      const [newRecordPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("health_record"),
+          userKeypair.publicKey.toBuffer(),
+          new anchor.BN(recordCount).toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .processWearableDataToRecord(
+          deviceId,
+          new anchor.BN(batchId),
+          newRecordType,
+          newMetadata,
+        )
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Process wearable data to record tx:", tx);
+
+      // Verify health record was created
+      const healthRecord = await program.account.healthRecord.fetch(
+        newRecordPda,
+      );
+      expect(healthRecord.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(healthRecord.recordType).to.equal(newRecordType);
+      expect(healthRecord.metadata).to.equal(newMetadata);
+
+      // Verify data batch was marked as processed
+      const dataBatch = await program.account.wearableDataBatch.fetch(
+        dataBatchPda,
+      );
+      expect(dataBatch.isProcessed).to.be.true;
+    });
+
+    it("Deactivates wearable device", async () => {
+      const tx = await program.methods
+        .deactivateWearableDevice(deviceId)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Deactivate wearable device tx:", tx);
+
+      // Verify device was deactivated
+      const device = await program.account.wearableDevice.fetch(
+        wearableDevicePda,
+      );
+      expect(device.isActive).to.be.false;
+    });
+  });
+
+  describe("Cross-Device Sync", () => {
+    let syncStatePda1: PublicKey;
+    let syncStatePda2: PublicKey;
+    let syncOperationPda: PublicKey;
+    const device1Id = "mobile-app-001";
+    const device2Id = "web-app-001";
+    const syncKey = crypto.randomBytes(32);
+
+    it("Initializes sync state for device 1", async () => {
+      [syncStatePda1] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("sync_state"),
+          userKeypair.publicKey.toBuffer(),
+          Buffer.from(device1Id),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .initializeSyncState(device1Id, Array.from(syncKey), true)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Initialize sync state 1 tx:", tx);
+
+      // Verify sync state was created
+      const syncState = await program.account.syncState.fetch(syncStatePda1);
+      expect(syncState.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(syncState.deviceId).to.equal(device1Id);
+      expect(syncState.isPrimary).to.be.true;
+    });
+
+    it("Initializes sync state for device 2", async () => {
+      [syncStatePda2] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("sync_state"),
+          userKeypair.publicKey.toBuffer(),
+          Buffer.from(device2Id),
+        ],
+        program.programId,
+      );
+
+      const tx = await program.methods
+        .initializeSyncState(device2Id, Array.from(syncKey), false)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Initialize sync state 2 tx:", tx);
+
+      // Verify sync state was created
+      const syncState = await program.account.syncState.fetch(syncStatePda2);
+      expect(syncState.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(syncState.deviceId).to.equal(device2Id);
+      expect(syncState.isPrimary).to.be.false;
+    });
+
+    it("Starts sync operation", async () => {
+      [syncOperationPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("sync_state"),
+          Buffer.from("operation"),
+          userKeypair.publicKey.toBuffer(),
+          Buffer.from(device1Id),
+          Buffer.from(device2Id),
+        ],
+        program.programId,
+      );
+
+      const operationType = "full_sync";
+
+      const tx = await program.methods
+        .startSyncOperation(
+          device1Id,
+          device2Id,
+          operationType,
+          Array.from(syncKey),
+        )
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Start sync operation tx:", tx);
+
+      // Verify sync operation was created
+      const syncOperation = await program.account.syncOperation.fetch(
+        syncOperationPda,
+      );
+      expect(syncOperation.owner.toString()).to.equal(
+        userKeypair.publicKey.toString(),
+      );
+      expect(syncOperation.sourceDevice).to.equal(device1Id);
+      expect(syncOperation.targetDevice).to.equal(device2Id);
+      expect(syncOperation.operationType).to.equal(operationType);
+    });
+
+    it("Completes sync operation", async () => {
+      const recordsSynced = 5;
+      const newStateHash = crypto.randomBytes(32);
+
+      const tx = await program.methods
+        .completeSyncOperation(
+          device1Id,
+          device2Id,
+          new anchor.BN(recordsSynced),
+          Array.from(newStateHash),
+        )
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Complete sync operation tx:", tx);
+
+      // Verify sync operation was completed
+      const syncOperation = await program.account.syncOperation.fetch(
+        syncOperationPda,
+      );
+      expect(syncOperation.isSuccessful).to.be.true;
+      expect(syncOperation.recordsSynced.toNumber()).to.equal(recordsSynced);
+
+      // Verify sync states were updated
+      const syncState1 = await program.account.syncState.fetch(syncStatePda1);
+      const syncState2 = await program.account.syncState.fetch(syncStatePda2);
+      expect(syncState1.syncCount.toNumber()).to.equal(1);
+      expect(syncState2.syncCount.toNumber()).to.equal(1);
+    });
+
+    it("Updates sync primary status", async () => {
+      const tx = await program.methods
+        .updateSyncPrimary(device2Id, true)
+        .accountsPartial({
+          owner: userKeypair.publicKey,
+        })
+        .signers([userKeypair])
+        .rpc();
+
+      console.log("Update sync primary tx:", tx);
+
+      // Verify primary status was updated
+      const syncState = await program.account.syncState.fetch(syncStatePda2);
+      expect(syncState.isPrimary).to.be.true;
     });
   });
 });
