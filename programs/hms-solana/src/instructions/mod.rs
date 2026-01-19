@@ -10,6 +10,9 @@ pub mod emergency_access;
 pub mod dao_governance;
 pub mod wearable_integration;
 pub mod cross_device_sync;
+pub mod create_hms_nft;
+pub mod erc20;
+pub mod erc721;
 
 pub use init_profile::*;
 pub use add_record::*;
@@ -23,3 +26,6 @@ pub use emergency_access::*;
 pub use dao_governance::*;
 pub use wearable_integration::*;
 pub use cross_device_sync::*;
+pub use create_hms_nft::*;
+pub use erc20::*;
+pub use erc721::*;

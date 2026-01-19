@@ -6,6 +6,7 @@ pub mod emergency_access;
 pub mod dao_governance;
 pub mod wearable_device;
 pub mod sync_state;
+pub mod hms_nft;
 
 pub use profile::*;
 pub use record::*;
@@ -15,3 +16,4 @@ pub use emergency_access::*;
 pub use dao_governance::*;
 pub use wearable_device::*;
 pub use sync_state::*;
+pub use hms_nft::*;

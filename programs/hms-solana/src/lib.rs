@@ -20,6 +20,16 @@ pub mod hms_solana {
         instructions::initialize_profile(ctx)
     }
 
+    /// Create a new HMS NFT
+    pub fn create_hms_nft(
+        ctx: Context<CreateHmsNft>,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<()> {
+        instructions::create_hms_nft(ctx, name, symbol, uri)
+    }
+
     /// Add a new health record
     pub fn add_record(
         ctx: Context<AddRecord>,
