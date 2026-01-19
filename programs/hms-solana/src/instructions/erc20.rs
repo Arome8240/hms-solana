@@ -58,5 +58,22 @@ mod erc20 {
         pub fn allowance(&self, owner: AccountId, spender: AccountId) -> Balance {
             self.allowances.get((owner, spender)).unwrap_or(0)
         }
+
+        #[ink(message)]
+        pub fn transfer_from(&mut self, from: AccountId, to: AccountId, value: Balance) -> bool {
+            let spender = self.env().caller();
+            let allowance = self.allowance(from, spender);
+            if allowance < value {
+                return false;
+            }
+            let from_balance = self.balance_of(from);
+            if from_balance < value {
+                return false;
+            }
+            self.balances.insert(from, &(from_balance - value));
+            let to_balance = self.balance_of(to);
+            self.balances.insert(to, &(to_balance + value));
+            true
+        }
     }
 }
