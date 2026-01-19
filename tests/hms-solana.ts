@@ -860,4 +860,59 @@ describe("hms-solana", () => {
       expect(syncState.isPrimary).to.be.true;
     });
   });
+
+  describe("HMS NFT", () => {
+    it("Creates an HMS NFT", async () => {
+      const nftName = "HMS Profile NFT";
+      const nftSymbol = "HMSP";
+      const nftUri = "https://example.com/hms-nft.json";
+
+      const mint = Keypair.generate();
+      const tokenAccount = await anchor.utils.token.associatedAddress({
+        mint: mint.publicKey,
+        owner: userKeypair.publicKey
+      });
+
+      const metadataProgramId = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+      const [metadataAccount, _] = PublicKey.findProgramAddressSync(
+          [
+              Buffer.from("metadata"),
+              metadataProgramId.toBuffer(),
+              mint.publicKey.toBuffer(),
+          ],
+          metadataProgramId
+      );
+      const [masterEditionAccount, __] = PublicKey.findProgramAddressSync(
+          [
+              Buffer.from("metadata"),
+              metadataProgramId.toBuffer(),
+              mint.publicKey.toBuffer(),
+              Buffer.from("edition"),
+          ],
+          metadataProgramId
+      );
+
+      const tx = await program.methods
+        .createHmsNft(nftName, nftSymbol, nftUri)
+        .accounts({
+          authority: userKeypair.publicKey,
+          mint: mint.publicKey,
+          tokenAccount,
+          metadataAccount,
+          masterEditionAccount,
+          tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+          associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+          tokenMetadataProgram: metadataProgramId,
+          systemProgram: SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        })
+        .signers([userKeypair, mint])
+        .rpc();
+
+      console.log("Create HMS NFT tx:", tx);
+
+      // You can add assertions here to verify the NFT was created correctly
+      // For example, fetch the mint and check its supply, or fetch the metadata account
+    });
+  });
 });
